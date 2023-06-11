@@ -56,7 +56,7 @@ body,
 }
 
 
-.moving-selector-on-button {
+.draggable-selector-on-button {
     position: absolute;
     bottom: 70px;
     left: 30px;

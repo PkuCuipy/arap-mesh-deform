@@ -18,10 +18,14 @@ export const LightCfgAtom = atom({
   }
 })
 
-export const SelectorCfgAtom = atom({
-  key: 'SelectorCfgAtom',
-  default: {
-    hidden: true,
-    selectorType: null,
-  }
+// 顶点类型: fixed | draggable | calculated (default)
+export const enum VertexType {
+  Calculated = 0,
+  Fixed = 1,
+  Draggable = 2,
+}
+
+export const ForceUpdateAtom = atom({
+  key: 'ForceUpdateAtom',
+  default: 0.0,
 })
