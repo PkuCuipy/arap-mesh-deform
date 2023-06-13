@@ -8,6 +8,18 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <script src="./linear-algebra-js/web/linear-algebra-asm.js"></script>
+    <script src="./linear-algebra-js/web/vector.js"></script>
+    <script src="./linear-algebra-js/web/emscripten-memory-manager.js"></script>
+    <script src="./linear-algebra-js/web/dense-matrix.js"></script>
+    <script src="./linear-algebra-js/web/sparse-matrix.js"></script>
+    <script src="./linear-algebra-js/web/complex.js"></script>
+    <script src="./linear-algebra-js/web/complex-dense-matrix.js"></script>
+    <script src="./linear-algebra-js/web/complex-sparse-matrix.js"></script>
+    <script> let memoryManager = new EmscriptenMemoryManager(); </script>
+
     <script type="module" src="/src/index.tsx"></script>
+
   </body>
 </html>

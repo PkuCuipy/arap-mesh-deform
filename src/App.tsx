@@ -1,25 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDrag } from 'react-use-gesture';
 
-import {
-  Box3,
-  BufferAttribute,
-  BufferGeometry,
-  Mesh,
-  MeshPhongMaterial,
-  PerspectiveCamera,
-  PointsMaterial,
-  Vector3
-} from "three";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Points, Sky } from "@react-three/drei";
+
+import { Box3, BufferAttribute, BufferGeometry, Mesh, MeshPhongMaterial, PerspectiveCamera, Vector3 } from "three";
+import { Canvas, useThree } from "@react-three/fiber";
+import { Sky } from "@react-three/drei";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
 
 import { useRecoilState } from 'recoil';
 import { CamCfgAtom, ForceUpdateAtom, LightCfgAtom, VertexType } from './atoms';
 import { sphericalToCartesian } from "./utils";
-
 
 
 // 控制摄像机旋转的组件
@@ -70,6 +61,16 @@ export const FixedSelectorOn = ({onClick}) => {
 };
 
 
+// 取消选择器开启组件
+export const DeSelectorOn = ({onClick}) => {
+  return (
+    <div className={'de-selector-on-button'} onClick={onClick}>De Select</div>
+  )
+};
+
+
+
+
 // 矩形顶点选择器
 export const RectSelector = ({selectorType, onDragDone}) => {
   const bind = useDrag(({initial: [x0, y0], xy: [x, y], first, last}) => {
@@ -88,10 +89,21 @@ export const RectSelector = ({selectorType, onDragDone}) => {
       onDragDone({xMin, xMax, yMin, yMax});
     }
   })
+
+  let borderColor;
+  if (selectorType === "drag") {borderColor = '#ff5f9f';}
+  else if (selectorType === "fixed") {borderColor = '#ffdf5f';}
+  else {borderColor = '#5f5fff';}
+
+  let backgroundColor;
+  if (selectorType === "drag") {backgroundColor = '#ff5f9f10';}
+  else if (selectorType === "fixed") {backgroundColor = '#ffdf5f10';}
+  else {backgroundColor = '#5f5fff10';}
+
   return (
     <div {...bind()} style={{
-      border: selectorType === "drag" ? '0.3rem solid #ff5f9f' : '0.3rem solid #ffdf5f',
-      backgroundColor: selectorType === "drag" ? '#ffdfdf30' : '#ffdf5f10',
+      border: `0.3rem solid ${borderColor}`,
+      backgroundColor: backgroundColor,
       position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', boxSizing: 'border-box', cursor: 'crosshair',
     }}></div>
   )
@@ -113,29 +125,103 @@ const getVerticesWithinRect = ({verticesPosRef: verticesPosRef, cameraRef, xMin,
 
 
 // 根据 faces 建立邻居表 (该表可以查询给定顶点 i 的全部邻居顶点 j)
-type NeighborTable = Map<number, Set<number>>;
-const buildNeighborTable = (faces: Uint32Array): NeighborTable => {
+type NeighborTableType = Map<number, Set<number>>;
+const buildNeighborTable = (faces: Uint32Array): NeighborTableType => {
   const neighborTable = new Map();
   for (let faceIdx = 0; faceIdx < faces.length / 3; faceIdx++) {
-    const [va, vb, vc] = faces.slice(3 * faceIdx, 3 * faceIdx + 3);
-    if (!neighborTable.has(va)) {
-      neighborTable.set(va, new Set());
-    }
-    if (!neighborTable.has(vb)) {
-      neighborTable.set(vb, new Set());
-    }
-    if (!neighborTable.has(vc)) {
-      neighborTable.set(vc, new Set());
-    }
-    neighborTable.get(va).add(vb);
-    neighborTable.get(va).add(vc);
-    neighborTable.get(vb).add(va);
-    neighborTable.get(vb).add(vc);
-    neighborTable.get(vc).add(va);
-    neighborTable.get(vc).add(vb);
+    const [vA, vB, vC] = faces.slice(3 * faceIdx, 3 * faceIdx + 3);   // 该三角形三个顶点的编号
+    if (!neighborTable.has(vA)) {neighborTable.set(vA, new Set());}
+    if (!neighborTable.has(vB)) {neighborTable.set(vB, new Set());}
+    if (!neighborTable.has(vC)) {neighborTable.set(vC, new Set());}
+    neighborTable.get(vA).add(vB);
+    neighborTable.get(vA).add(vC);
+    neighborTable.get(vB).add(vA);
+    neighborTable.get(vB).add(vC);
+    neighborTable.get(vC).add(vA);
+    neighborTable.get(vC).add(vB);
   }
   return neighborTable;
 }
+
+// 根据 faces 建立边对顶点表 (该表可以查询给定边 (i, j) 的对顶点 k)
+type OppositeVtxIdOfEdgeType = Map<string, number>;  // 形如 "123-456" -> 0
+const buildOppositeVtxIdOfEdge = (faces: Uint32Array): OppositeVtxIdOfEdgeType => {
+  const oppositeVtxIdOfEdge = new Map();
+  for (let faceIdx = 0; faceIdx < faces.length / 3; faceIdx++) {
+    const [vA, vB, vC] = faces.slice(3 * faceIdx, 3 * faceIdx + 3);   // 该三角形三个顶点的编号
+    oppositeVtxIdOfEdge.set(`${vA}-${vB}`, vC);
+    oppositeVtxIdOfEdge.set(`${vB}-${vC}`, vA);
+    oppositeVtxIdOfEdge.set(`${vC}-${vA}`, vB);
+  }
+  return oppositeVtxIdOfEdge;
+}
+
+// 计算每个边 i-j 的权重 w_ij
+type WIJType = Map<string, number>;  // 形如 "123-137" -> 0.5
+const buildWij = (verticesPos: Float32Array, faces: Uint32Array, neighborTable: NeighborTableType, oppositeVtxIdOfEdge: OppositeVtxIdOfEdgeType): WIJType => {
+  const wIJ = new Map();
+  for (let vtxIdx = 0; vtxIdx < verticesPos.length / 3; vtxIdx++) {
+    const neighborVtxIds = Array.from(neighborTable.get(vtxIdx));
+    for (const neighborVtxId of neighborVtxIds) {
+
+      // alpha_ij
+      let cotAlpha;
+      const edgeKeyIJ = `${vtxIdx}-${neighborVtxId}`;
+      const oppositeVtxIdOfEdgeIJ = oppositeVtxIdOfEdge.get(edgeKeyIJ);
+      if (oppositeVtxIdOfEdgeIJ !== undefined) { // 若该边是边界边, 则没有对顶点
+        const vtxPosI = new Vector3(verticesPos[3 * vtxIdx], verticesPos[3 * vtxIdx + 1], verticesPos[3 * vtxIdx + 2]);
+        const vtxPosJ = new Vector3(verticesPos[3 * neighborVtxId], verticesPos[3 * neighborVtxId + 1], verticesPos[3 * neighborVtxId + 2]);
+        const vtxPosK = new Vector3(verticesPos[3 * oppositeVtxIdOfEdgeIJ], verticesPos[3 * oppositeVtxIdOfEdgeIJ + 1], verticesPos[3 * oppositeVtxIdOfEdgeIJ + 2]);
+        const vecKI = new Vector3().subVectors(vtxPosK, vtxPosI).normalize();
+        const vecKJ = new Vector3().subVectors(vtxPosK, vtxPosJ).normalize();
+        const cosine = vecKI.dot(vecKJ);
+        const sine = vecKI.clone().cross(vecKJ).length();
+        cotAlpha = cosine / sine;
+      }
+
+      // beta_ij
+      let cotBeta;
+      const edgeKeyJI = `${neighborVtxId}-${vtxIdx}`;
+      const oppositeVtxIdOfEdgeJI = oppositeVtxIdOfEdge.get(edgeKeyJI);
+      if (oppositeVtxIdOfEdgeJI !== undefined) { // 若该边是边界边, 则没有对顶点
+        const vtxPosI = new Vector3(verticesPos[3 * vtxIdx], verticesPos[3 * vtxIdx + 1], verticesPos[3 * vtxIdx + 2]);
+        const vtxPosJ = new Vector3(verticesPos[3 * neighborVtxId], verticesPos[3 * neighborVtxId + 1], verticesPos[3 * neighborVtxId + 2]);
+        const vtxPosK = new Vector3(verticesPos[3 * oppositeVtxIdOfEdgeJI], verticesPos[3 * oppositeVtxIdOfEdgeJI + 1], verticesPos[3 * oppositeVtxIdOfEdgeJI + 2]);
+        const vecKI = new Vector3().subVectors(vtxPosK, vtxPosI).normalize();
+        const vecKJ = new Vector3().subVectors(vtxPosK, vtxPosJ).normalize();
+        const cosine = vecKI.dot(vecKJ);
+        const sine = vecKI.clone().cross(vecKJ).length();
+        cotBeta = cosine / sine;
+      }
+
+      // w_ij
+      let w;
+      if (cotAlpha === undefined) {w = cotBeta;}
+      else if (cotBeta === undefined) {w = cotAlpha;}
+      else {w = 0.5 * (cotAlpha + cotBeta);}
+      wIJ.set(edgeKeyIJ, w);    // i->j
+      wIJ.set(edgeKeyJI, w);    // j->i
+
+    }
+  }
+
+  return wIJ;
+}
+
+
+// 根据 wIJ 构建系数矩阵 L
+const buildMatrixL = (wIJ: WIJType, nrVertices: number, neighborTable: NeighborTableType): SparseMatrix => {
+  const triplet = new Triplet(nrVertices, nrVertices);
+  for (let i = 0; i < nrVertices; i++) {
+    for (const j of neighborTable.get(i)) {
+      const w_ij = wIJ.get(`${i}-${j}`);
+      triplet.addEntry(w_ij, i, i);    // L_ii += w_ij
+      triplet.addEntry(-w_ij, i, j);   // L_ij += (-w_ij)
+    }
+  }
+  return SparseMatrix.fromTriplet(triplet);
+}
+
 
 
 const vertexTypeToColor = (type: VertexType): number => {
@@ -151,7 +237,8 @@ const vertexTypeToColor = (type: VertexType): number => {
 
 
 // 显示模型的组件
-export const TriMesh = ({verticesPosRef: verticesPosRef, verticesOriginalRef, verticesTypeRef, cameraRef, neighborTableRef}) => {
+export const TriMesh = ({verticesPosRef: verticesPosRef, verticesOriginalRef, verticesTypeRef, cameraRef,
+                          neighborTableRef, oppositeVtxIdOfEdgeRef, wIJRef, LMatrixRef}) => {
 
   const geometryRef = useRef<BufferGeometry>();
   const [modelLoaded, setModelLoaded] = useState<boolean>(false);
@@ -208,7 +295,10 @@ export const TriMesh = ({verticesPosRef: verticesPosRef, verticesOriginalRef, ve
         verticesOriginalRef.current = new Float32Array(vertices);
         geometryRef.current = geom;
         neighborTableRef.current = buildNeighborTable(faces);
-        console.log('neighborTable', neighborTableRef.current);
+        oppositeVtxIdOfEdgeRef.current = buildOppositeVtxIdOfEdge(faces);
+        wIJRef.current = buildWij(vertices, faces, neighborTableRef.current, oppositeVtxIdOfEdgeRef.current);
+        LMatrixRef.current = buildMatrixL(wIJRef.current, verticesPosRef.current.length / 3, neighborTableRef.current);
+
       });
     });
   }, []);
@@ -238,7 +328,7 @@ export const TriMesh = ({verticesPosRef: verticesPosRef, verticesOriginalRef, ve
     const vecRight = vecOC.clone().cross(vecOH).normalize();
     const vecUp = vecOC.clone().cross(vecRight).normalize();
     const vecDelta = vecRight.clone().multiplyScalar(dRight).add(vecUp.clone().multiplyScalar(-dDown));
-    // 1. 更新拖拽指定的动点坐标
+    // 更新拖拽指定的动点坐标
     for (let idx = 0; idx < verticesPosRef.current.length / 3; idx++) {
       if (verticesTypeRef.current[idx] === VertexType.Draggable) {
         verticesPosRef.current[3 * idx + 0] += vecDelta.x / sensitivity;
@@ -246,12 +336,10 @@ export const TriMesh = ({verticesPosRef: verticesPosRef, verticesOriginalRef, ve
         verticesPosRef.current[3 * idx + 2] += vecDelta.z / sensitivity;
       }
     }
-    // 2. 计算非动点且非固定点的、符合 ARAP 的新坐标
-    // fixme: 设置为邻居节点的平均坐标 (just for fun/test)
-
+    // 计算非动点且非固定点的、符合 ARAP 的新坐标   fixme: 目前是设置为邻居节点的平均坐标 (just for fun/test)
     for (let idx = 0; idx < verticesPosRef.current.length / 3; idx++) {
       if (verticesTypeRef.current[idx] === VertexType.Calculated) {
-        const table = neighborTableRef.current as NeighborTable;
+        const table = neighborTableRef.current as NeighborTableType;
         const neighbors = Array(...table.get(idx)) as number[];
         const neighborsPos = neighbors.map(neiId => verticesPosRef.current.slice(3 * neiId, 3 * neiId + 3));
         const neighborsPosAvg = neighborsPos.reduce((acc, cur) => acc.map((v, i) => v + cur[i] / neighbors.length), [0, 0, 0]);
@@ -260,7 +348,6 @@ export const TriMesh = ({verticesPosRef: verticesPosRef, verticesOriginalRef, ve
         verticesPosRef.current[3 * idx + 2] = neighborsPosAvg[2];
       }
     }
-
     // 通知 three 更新模型
     (geometryRef.current as BufferGeometry).attributes.position.needsUpdate = true;
     setForceUpdate(Math.random());  // 触发 points 重渲染, 但我不知道为啥这样就能解决..
@@ -304,7 +391,7 @@ export const App = () => {
   const [lightConfig, ] = useRecoilState(LightCfgAtom);
   const lightPos = sphericalToCartesian({theta: lightConfig.theta, phi: lightConfig.phi, distance: lightConfig.distance});
 
-  // 顶点选择器类型: "none" | "drag" | "fixed"
+  // 顶点选择器类型: "none" | "drag" | "fixed" | "calc"
   const [selectorType, setSelectorType] = useState("none");
 
   // 所有顶点的 [变形前] 坐标
@@ -316,8 +403,12 @@ export const App = () => {
   // 每个顶点的状态: fixed | draggable | calculated
   const verticesTypeRef = useRef<VertexType[]>();
 
-  // 顶点邻接表
-  const neighborTableRef = useRef<NeighborTable>();
+  // ARAP 算法中, 避免重复计算用
+  const neighborTableRef = useRef<NeighborTableType>();         // 顶点邻接表
+  const oppositeVtxIdOfEdgeRef = useRef<Map<string, number>>(); // 有向边 i->j 所在三角形的 ｢对点｣ 编号. 对于每个模型只需要构造一次
+  const wIJRef = useRef<Map<string, number>>();             // w_ij: 边 i-j 的权重, 对于每个模型只需要计算一次
+  const LMatrixRef = useRef<SparseMatrix>();                 // L: 系数矩阵, 对于每个模型只需要计算一次, 之后只需要取所需的 n 行 n 列即可
+  const RiRef = useRef<Map<number, DenseMatrix>>();         // R_i: 顶点 i 的邻域 (Cell) 从原始位置 Ci 旋转到当前位置 Ci' 的旋转矩阵, 每当顶点 Ci' 移动时要更新
 
 
   return (
@@ -325,15 +416,17 @@ export const App = () => {
       <Canvas>
 
         {/* 天空和光源 */}
-        <Sky/>
-        <ambientLight intensity={0.1}/>
-        <pointLight position={lightPos} intensity={0.7}/>
-        <pointLight position={[-13, 100, 3]} intensity={0.2}/>
-        <pointLight position={[4, -100, 11]} intensity={0.2}/>
-        <pointLight position={[100, 1, -7]} intensity={0.2}/>
-        <pointLight position={[-100, -3, 9]} intensity={0.2}/>
-        <pointLight position={[11, 4, -100]} intensity={0.2}/>
-        <pointLight position={[-12, 14, 100]} intensity={0.2}/>
+        <group>
+          <Sky/>
+          <ambientLight intensity={0.1}/>
+          <pointLight position={lightPos} intensity={0.7}/>
+          <pointLight position={[-13, 100, 3]} intensity={0.2}/>
+          <pointLight position={[4, -100, 11]} intensity={0.2}/>
+          <pointLight position={[100, 1, -7]} intensity={0.2}/>
+          <pointLight position={[-100, -3, 9]} intensity={0.2}/>
+          <pointLight position={[11, 4, -100]} intensity={0.2}/>
+          <pointLight position={[-12, 14, 100]} intensity={0.2}/>
+        </group>
 
         {/* 模型 */}
         <TriMesh
@@ -342,6 +435,9 @@ export const App = () => {
           verticesTypeRef={verticesTypeRef}
           cameraRef={cameraRef}
           neighborTableRef={neighborTableRef}
+          oppositeVtxIdOfEdgeRef={oppositeVtxIdOfEdgeRef}
+          wIJRef={wIJRef}
+          LMatrixRef={LMatrixRef}
         />
 
       </Canvas>
@@ -353,23 +449,45 @@ export const App = () => {
       {/* 顶点交互框选器 */}
       <DraggableSelectorOn onClick={()=>{setSelectorType("drag")}}/>
       <FixedSelectorOn onClick={()=>{setSelectorType("fixed")}}/>
+      <DeSelectorOn onClick={()=>{setSelectorType("calc")}}/>
       {selectorType !== "none" &&
         <RectSelector
           selectorType={selectorType}
           onDragDone={({xMin, xMax, yMin, yMax}) => {
+
+            // 关闭顶点选择器
             setSelectorType("none");
-            // console.log("选取了矩形:", xMin, xMax, yMin, yMax);
+
+            // 找出所有落入该矩形的顶点编号
             const verticesWithinRect = getVerticesWithinRect({verticesPosRef: verticesPosRef, cameraRef, xMin, xMax, yMin, yMax});
-            // console.log("框选的顶点编号:", verticesWithinRect);
-            if (selectorType === "drag") {
-              verticesWithinRect.forEach(idx => {
-                (verticesTypeRef.current as VertexType[])[idx] = VertexType.Draggable;
-              })
-            } else if (selectorType === "fixed") {
-              verticesWithinRect.forEach(idx => {
-                (verticesTypeRef.current as VertexType[])[idx] = VertexType.Fixed;
-              })
+
+            // 将这些顶点设置为 Fixed 或 Draggable 或 Calc
+            const types = verticesTypeRef.current as VertexType[];
+            for (const idx of verticesWithinRect) {
+              if (selectorType === "drag") {
+                types[idx] = VertexType.Draggable;
+              }
+              else if (selectorType === "fixed") {
+                types[idx] = VertexType.Fixed;
+              }
+              else if (selectorType === "calc") {
+                types[idx] = VertexType.Calculated;
+              }
             }
+
+            // todo: 构建系数矩阵 L 和 b
+            // 统计哪些顶点的坐标是待计算的
+            const verticesToCalc = verticesTypeRef.current.map((vtxType, vtxId) => vtxType === VertexType.Calculated ? vtxId : -1).filter(vtxId => vtxId !== -1);
+            const verticesSettled = verticesTypeRef.current.map((vtxType, vtxId) => vtxType !== VertexType.Calculated ? vtxId : -1).filter(vtxId => vtxId !== -1);
+            console.log("verticesToCalc", verticesToCalc);
+            console.log("verticesSettled", verticesSettled);
+
+            // todo: 计算 R_i
+
+
+
+
+
           }}
         />
       }

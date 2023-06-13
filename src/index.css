@@ -96,3 +96,24 @@ body,
     font-family: monospace;
     user-select: none;
 }
+
+
+.de-selector-on-button {
+    position: absolute;
+    bottom: 70px;
+    left: 110px;
+    width: 30px;
+    height: 30px;
+    background-color: lightskyblue;
+    border: 1px solid #000;
+    border-radius: 30%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 0.2rem;
+    font-size: 0.4rem;
+    font-family: monospace;
+    user-select: none;
+}
