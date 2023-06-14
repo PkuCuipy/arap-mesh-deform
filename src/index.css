@@ -1,24 +1,25 @@
 * {
-  margin: 0;
-  padding: 0;
+    margin: 0;
+    padding: 0;
 }
 
 html,
 body,
 #root {
-  width: 100%;
-  height: 100%;
+    width: 100%;
+    height: 100%;
 }
 
+/* 相机旋转控制组件 */
 .cam-pos-ctl {
     position: absolute;
-    bottom: 30px;
-    left: 30px;
-    width: 30px;
-    height: 30px;
+    bottom: 13rem;
+    left: 9rem;
+    width: 3rem;
+    height: 3rem;
     background-color: #afa;
     border: 1px solid #000;
-    border-radius: 30%;
+    border-radius: 50%;
     cursor: grab;
     display: flex;
     align-items: center;
@@ -26,22 +27,23 @@ body,
     font-size: 0.8rem;
     font-family: monospace;
     user-select: none;
+    -webkit-user-select: none;
 }
-
 .cam-pos-ctl:active {
     cursor: grabbing;
 }
 
 
+/* 光源旋转控制组件 */
 .light-pos-ctl {
     position: absolute;
-    bottom: 30px;
-    left: 70px;
-    width: 30px;
-    height: 30px;
-    background-color: #aadcff;
+    bottom: 13rem;
+    left: 5rem;
+    width: 3rem;
+    height: 3rem;
+    background-color: #fff;
     border: 1px solid #000;
-    border-radius: 30%;
+    border-radius: 50%;
     cursor: grab;
     display: flex;
     align-items: center;
@@ -49,71 +51,82 @@ body,
     font-size: 0.8rem;
     font-family: monospace;
     user-select: none;
+    -webkit-user-select: none;
 }
-
 .light-pos-ctl:active {
     cursor: grabbing;
 }
 
 
-.draggable-selector-on-button {
-    position: absolute;
-    bottom: 70px;
-    left: 30px;
-    width: 30px;
-    height: 30px;
-    background-color: #fadcff;
-    border: 1px solid #000;
-    border-radius: 30%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    padding: 0.2rem;
-    font-size: 0.4rem;
-    font-family: monospace;
-    user-select: none;
-}
-
-
+/*顶点选择器*/
 .fixed-selector-on-button {
-    position: absolute;
-    bottom: 70px;
-    left: 70px;
-    width: 30px;
-    height: 30px;
     background-color: #fadc5f;
     border: 1px solid #000;
-    border-radius: 30%;
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+.draggable-selector-on-button {
+    background-color: #ffabc6;
+    border: 1px solid #000;
+    border-radius: 0.5rem;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
-    padding: 0.2rem;
-    font-size: 0.4rem;
-    font-family: monospace;
-    user-select: none;
+    overflow: hidden;
 }
-
-
 .de-selector-on-button {
-    position: absolute;
-    bottom: 70px;
-    left: 110px;
-    width: 30px;
-    height: 30px;
     background-color: lightskyblue;
     border: 1px solid #000;
-    border-radius: 30%;
-    cursor: pointer;
+    border-radius: 0.5rem;
     display: flex;
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
-    padding: 0.2rem;
-    font-size: 0.4rem;
+    overflow: hidden;
+}
+.fixed-selector-on-button:hover,
+.draggable-selector-on-button:hover,
+.de-selector-on-button:hover{
+    opacity: 0.8;
+}
+.selector-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 0.5fr 1fr 1fr 1fr;
+    position: absolute;
+    bottom: 4rem;
+    left: 5rem;
+    width: 7rem;
+    height: 8rem;
+    font-size: 0.9rem;
+    white-space: nowrap;
     font-family: monospace;
     user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+}
+
+.abs-text {
+    position: absolute;
+    font-size: 0.9rem;
+    font-family: sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* 模型选择器下拉框 */
+.model-selector {
+    position: absolute;
+    bottom: 19.4rem;
+    left: 5rem;
+    width: 7rem;
+    height: 2rem;
+    user-select: none;
+    -webkit-user-select: none;
 }

@@ -1,3 +1,24 @@
+/*
+* 2023-06-15 后记
+*
+* 看网上的教程以及 GPT4 的建议, 选用了 TypeScript + React Hook + Three.js 的组合方案.
+* 但写的过程中发现这很乱, 因为 Three 有自己的一套状态维护, 比如 geometry 中的顶点坐标的更新, 而这些对 React 是不可见的.
+* 而顶点的更新那里, 又弄了一个 ForceUpdate 的 Recoil State 才解决, 也不知道具体原理.
+* 总之最后用了很多 tricks, 终于让程序框架丑陋地跑起来了.
+*
+* 而这还只是噩梦的开始, 等到写数值求解的部分才发现, JS 的数值计算生态更是离谱.
+* 就矩阵而言, 有用 number[][] 的, 还有 Three 的 Matrix3, 有 linear-algebra-js 的 DenseMatrix 等等,
+* 就没有一种像 NumPy 一样的统一一点的生态.
+* 另外语言语法自由度的限制也导致没法像 Python 那样 `A-B`,
+* 而是必须什么 `A.clone().subtract(B)`, 对, 你还得搞清楚这个 operator 是不是 inplace 的,
+* 然后加个 .clone() 如果需要. 比如 Three 的向量加减法就默认 inplace, 稍不留神就导致奇怪的 bug.
+*
+* 另外, 援引的这两个数值库都很老, 也没有 npm 的版本, 于是没法 vite build 进来,
+* 只能 build 之后手动复制到 dist 文件夹中. 当然, 可能有什么更好的方案, 但我并不知道.
+* 总之呢, 如果有下一次尝试, 可能会改用 Cpp + Eigen + imGUI + OpenGL 了, 虽然也没用过就是了.
+*
+*/
+
 import { useEffect, useRef, useState } from 'react';
 import { useDrag } from 'react-use-gesture';
 
@@ -6,10 +27,11 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { Sky } from "@react-three/drei";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
+import Select from 'react-select'
 
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { CamCfgAtom, ForceUpdateAtom, LightCfgAtom, VertexType, vertexTypeToColor } from './constants';
-import { sphericalToCartesian } from "./utils";
+import { Matrix3x3Add, sphericalToCartesian } from "./utils";
 
 
 // 控制摄像机旋转的组件
@@ -23,7 +45,7 @@ export const CamPosCtl = () => {
     setCameraConfig({...cameraConfig, theta, phi});
   }, {bounds: bounds});
   return (
-    <div {...bind()} className={'cam-pos-ctl'}>Cam</div>
+    <div {...bind()} className={'cam-pos-ctl'}>Camera</div>
   )
 };
 
@@ -39,37 +61,40 @@ export const LightPosCtl = () => {
     setLightConfig({...lightConfig, theta, phi});
   }, {bounds: bounds});
   return (
-    <div {...bind()} className={'light-pos-ctl'}>Lit</div>
+    <div {...bind()} className={'light-pos-ctl'}>Light</div>
   )
 };
 
 
-// 动点选择器开启组件
+// 动点选择器开启按钮
 export const DraggableSelectorOn = ({onClick}) => {
   return (
-    <div className={'draggable-selector-on-button'} onClick={onClick}>Drag Select</div>
+    <div className={'draggable-selector-on-button'} onClick={onClick}>2|Draggable</div>
   )
 };
 
 
-// 定点选择器开启组件
+// 定点选择器开启按钮
 export const FixedSelectorOn = ({onClick}) => {
   return (
-    <div className={'fixed-selector-on-button'} onClick={onClick}>Fixed Select</div>
+    <div className={'fixed-selector-on-button'} onClick={onClick}>1|Fixed &nbsp;&nbsp;&nbsp;</div>
   )
 };
 
 
-// 取消选择器开启组件
+// 取消选择器开启按钮
 export const DeSelectorOn = ({onClick}) => {
   return (
-    <div className={'de-selector-on-button'} onClick={onClick}>De Select</div>
+    <div className={'de-selector-on-button'} onClick={onClick}>3|De-Select</div>
   )
 };
 
 
 // 矩形选择器
 export const RectSelector = ({selectorType, onDragDone}) => {
+  type RectType = {x: number, y: number, dx: number, dy: number};
+  const [draggingRect, setDraggingRect] = useState<RectType>({x: 0, y: 0, dx: 0, dy: 0});
+
   const bind = useDrag(({initial: [x0, y0], xy: [x, y], first, last}) => {
     const x0_ = x0 / window.innerWidth * 2 - 1;
     const y0_ = -(y0 / window.innerHeight * 2 - 1);
@@ -79,6 +104,7 @@ export const RectSelector = ({selectorType, onDragDone}) => {
     const xMax = Math.max(x0_, x_);
     const yMin = Math.min(y0_, y_);
     const yMax = Math.max(y0_, y_);
+    setDraggingRect({x: Math.min(x0, x), y: Math.min(y0, y), dx: Math.abs(x0 - x), dy: Math.abs(y0 - y)});
     if (first) {
       console.log("start dragging");
     } else if (last) {
@@ -89,8 +115,8 @@ export const RectSelector = ({selectorType, onDragDone}) => {
 
   let borderColor;
   if (selectorType === "drag") {borderColor = '#ff5f9f';}
-  else if (selectorType === "fixed") {borderColor = '#ffdf5f';}
-  else {borderColor = '#5f5fff';}
+  else if (selectorType === "fixed") {borderColor = '#cba417';}
+  else {borderColor = '#3594ff';}
 
   let backgroundColor;
   if (selectorType === "drag") {backgroundColor = '#ff5f9f10';}
@@ -98,17 +124,31 @@ export const RectSelector = ({selectorType, onDragDone}) => {
   else {backgroundColor = '#5f5fff10';}
 
   return (
-    <div {...bind()} style={{
-      border: `0.3rem solid ${borderColor}`,
-      backgroundColor: backgroundColor,
-      position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', boxSizing: 'border-box', cursor: 'crosshair',
-    }}></div>
+    <>
+      <div {...bind()} style={{
+        top: 0, left: 0, width: '100%', height: '100%',
+        border: `0.3rem solid ${borderColor}`,
+        backgroundColor: backgroundColor,
+        boxSizing: 'border-box',
+        position: 'absolute',
+        cursor: 'crosshair',
+      }}/>
+      <div style={{
+        top: draggingRect.y, left: draggingRect.x,
+        width: draggingRect.dx, height: draggingRect.dy,
+        border: `1px solid ${borderColor}`,
+        backgroundColor: backgroundColor,
+        boxSizing: 'border-box',
+        position: 'absolute',
+      }}/>
+  </>
   )
 }
 
 
 // 选出经过 camera 映射后, 会落入矩形 [xMin, xMax, yMin, yMax] 内的顶点
 const getVerticesWithinRect = ({verticesPosRef, meshRef, cameraRef, xMin, xMax, yMin, yMax}): Set<number> => {
+  // xMin, xMax, yMin, yMax ∈ [-1, 1]
   const vertices = new Set<number>();
   for (let idx = 0; idx < verticesPosRef.current.length / 3; idx++) {
     const pos3D = new Vector3(verticesPosRef.current[3 * idx], verticesPosRef.current[3 * idx + 1], verticesPosRef.current[3 * idx + 2]);
@@ -268,12 +308,13 @@ const calcRotationMatrices = (verticesOriginalPos, verticesPos, neighborTable, w
 // 显示模型的组件
 export const TriMesh = ({modelLoaded, verticesPosRef, verticesTypeRef, cameraRef, geometryRef, meshRef}) => {
 
-  const forceUpdate = useRecoilValue(ForceUpdateAtom);  // 不用, 但就是挂个 hook, 用于触发染色顶点的更新 (否则大概就得维护一个列表, 逐个更新每个 sphere)
+  // 仅仅是挂个 hook, 用于触发染色顶点的更新 (否则大概就得维护一个列表, 逐个更新每个 sphere)
+  const forceUpdate = useRecoilValue(ForceUpdateAtom);
 
   // 设置相机位姿
   const { camera }: { camera: PerspectiveCamera } = useThree();
   const cameraConfig = useRecoilValue(CamCfgAtom);
-  cameraRef.current = camera;   // 回传给上一层, 计算框选用
+  cameraRef.current = camera;   // 回传给上一层, 计算矩形框选时用于反投影
   useEffect(() => {
     const {theta, phi, distance} = cameraConfig;
     const cameraPos = sphericalToCartesian({theta, phi, distance});
@@ -283,7 +324,7 @@ export const TriMesh = ({modelLoaded, verticesPosRef, verticesTypeRef, cameraRef
 
   return (
     <>
-      {/* 模型主体 */}
+      {/* 模型主体 mesh */}
       {modelLoaded && (
         <mesh
           ref={meshRef}
@@ -292,7 +333,7 @@ export const TriMesh = ({modelLoaded, verticesPosRef, verticesTypeRef, cameraRef
         />
       )}
 
-      {/* 染色顶点 */}
+      {/* 染色的顶点 */}
       {modelLoaded && (
         verticesTypeRef.current
           .map((vtxType, vtxId) => [vtxType, vtxId])
@@ -340,18 +381,21 @@ export const App = () => {
   const oppositeVtxIdOfEdgeRef = useRef<Map<string, number>>(); // 有向边 i->j 所在三角形的 ｢对点｣ 编号. 对于每个模型只需要构造一次
   const wIJRef = useRef<Map<string, number>>();                 // w_ij: 边 i-j 的权重, 对于每个模型只需要计算一次
   const LMatrixRef = useRef<MatrixLType>();                     // L: 系数矩阵, 对于每个模型只需要计算一次, 之后只需要取所需的 n 行 n 列即可;
-  const RiRef = useRef<MatrixRType[]>();                        // R_i: 顶点 i 的邻域 (Cell) 从原始位置 Ci 旋转到当前位置 Ci' 的旋转矩阵, 每当顶点 Ci' 移动时要更新
-
 
   // 加载模型, 初始化各数据
-  useEffect(() => {
-    console.log('loading model')
+  const modelOptions = [
+    {label: "cactus", value: "cactus.obj"},
+    {label: "person", value: "person.obj"},
+  ]
+  const loadModel = (modelName: "string") => {
+    console.log("loading model: ", modelName)
     // 加载 obj 模型, 合并顶点, 转为 vertices 和 faces 数组
     const loader = new OBJLoader();
-    loader.load('/cactus.obj', (object) => {
+    loader.load(modelName, (object) => {
       object.traverse((child) => {
-        if (!(child instanceof Mesh)) {return;}
-
+        if (!(child instanceof Mesh)) {
+          return;
+        }
         // 用 mergeVertices() 合并相同的顶点 (不知道为啥读取的模型是 non-indexed 的)
         child.geometry.deleteAttribute('normal');   // 如果不删除, 就没法 merge
         child.geometry.deleteAttribute('uv');
@@ -388,10 +432,14 @@ export const App = () => {
 
         // 设置模型已加载的状态, 从而允许 React 渲染 Mesh
         setModelLoaded(true);
+        setForceUpdate(Math.random());
+        setCanVtxPosUpdate(false);
       });
     });
+  }
+  useEffect(() => {
+    loadModel(modelOptions[0].value);
   }, []);
-
 
   // 基于 ARAP 算法, 计算并更新待计算的顶点坐标
   const updateVtxPosARAP = () => {
@@ -406,17 +454,6 @@ export const App = () => {
 
     // 系数向量 b
     const R = calcRotationMatrices(verticesOriginalPosRef.current, verticesPosRef.current, neighborTableRef.current, wIJRef.current);
-    const Matrix3x3Add = (A: number[3][3], B: number[3][3]) => {
-      const C = new Array<number[3]>(3);
-      for (let i = 0; i < 3; i++) {
-        C[i] = new Array<number>(3);
-        for (let j = 0; j < 3; j++) {
-          C[i][j] = A[i][j] + B[i][j];
-        }
-      }
-      return C;
-    }
-    RiRef.current = R;
     const b = DenseMatrix.zeros(verticesToCalc.length, 3);
     for (let newI = 0; newI < verticesToCalc.length; newI++) {
       // bi := Σj 0.5 * (Ri + Rj) * (pi - pj)
@@ -496,7 +533,6 @@ export const App = () => {
     setForceUpdate(Math.random());  // 触发 [染色顶点] 的重渲染 (但我不知道为啥这样就能解决..)
   }
 
-
   // 处理顶点拖拽
   const cameraConfig = useRecoilValue(CamCfgAtom);
   const setForceUpdate = useSetRecoilState(ForceUpdateAtom)
@@ -530,108 +566,118 @@ export const App = () => {
     setForceUpdate(Math.random());  // 触发 [染色顶点] 的重渲染 (但我不知道为啥这样就能解决..)
   })
 
-
   // 持续不断地基于 ARAP 计算新坐标
   const [canVtxPosUpdate, setCanVtxPosUpdate] = useState(false);
-  const timerRef = useRef<number>();
+  const timerRef = useRef<number>(0);
   useEffect(() => {
-    if (canVtxPosUpdate) {
-      if (!timerRef.current) {
-        timerRef.current = setInterval(() => {
-          updateVtxPosARAP();   // 计算并更新非动点且非固定点的、符合 ARAP 的新坐标
-        }, 1)
-      }
+    if (canVtxPosUpdate && !timerRef.current) {   // 目前应该更新, 但还没上计时器, 就上计时器
+      timerRef.current = setInterval(updateVtxPosARAP, 1);
     }
-    else {
+    if (!canVtxPosUpdate && timerRef.current) {   // 目前不应该更新, 但还没清除计时器, 就清除计时器
+      clearInterval(timerRef.current);
+      timerRef.current = 0;
+    }
+    return () => {  // 组件卸载时清除定时器
       if (timerRef.current) {
         clearInterval(timerRef.current);
-      }
-    }
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
+        timerRef.current = 0;
       }
     }
   }, [canVtxPosUpdate]);
 
+  // 顶点选择器的快捷键: 1/2/3
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      console.log(e)
+      if (e.key === '1') {
+        setSelectorType(selectorType === "fixed" ? "none": "fixed")
+      } else if (e.key === '2') {
+        setSelectorType(selectorType === "drag" ? "none": "drag")
+      } else if (e.key === '3') {
+        setSelectorType(selectorType === "calc" ? "none": "calc")
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectorType]);
 
-  return (
+  return (<>
+
+    {/* Three-js */}
+    <Canvas {...bind()}>
+      {/* 天空和光源 */}
+      <group>
+        <Sky/>
+        <ambientLight intensity={0.1}/>
+        <pointLight position={lightPos} intensity={0.7}/>
+        <pointLight position={[-13, 100, 3]} intensity={0.2}/>
+        <pointLight position={[4, -100, 11]} intensity={0.2}/>
+        <pointLight position={[100, 1, -7]} intensity={0.2}/>
+        <pointLight position={[-100, -3, 9]} intensity={0.2}/>
+        <pointLight position={[11, 4, -100]} intensity={0.2}/>
+        <pointLight position={[-12, 14, 100]} intensity={0.2}/>
+      </group>
+      {/* 模型 */}
+      <TriMesh
+        modelLoaded={modelLoaded}
+        verticesPosRef={verticesPosRef}
+        verticesTypeRef={verticesTypeRef}
+        cameraRef={cameraRef}
+        geometryRef={geometryRef}
+        meshRef={meshRef}
+      />
+    </Canvas>
+
+    {/* 模型选择器 */}
+    <span className="abs-text" style={{left: "5rem", bottom: "21.8rem"}}> Select a model:</span>
+    <div className="model-selector">
+      <Select
+        options={modelOptions}
+        defaultValue={modelOptions[0]}
+        onChange={({label, value}) => loadModel(value)}
+      />
+    </div>
+
+
+    {/* 相机和光源控件 */}
     <>
-      <Canvas {...bind()}>
-
-        {/* 天空和光源 */}
-        <group>
-          <Sky/>
-          <ambientLight intensity={0.1}/>
-          <pointLight position={lightPos} intensity={0.7}/>
-          <pointLight position={[-13, 100, 3]} intensity={0.2}/>
-          <pointLight position={[4, -100, 11]} intensity={0.2}/>
-          <pointLight position={[100, 1, -7]} intensity={0.2}/>
-          <pointLight position={[-100, -3, 9]} intensity={0.2}/>
-          <pointLight position={[11, 4, -100]} intensity={0.2}/>
-          <pointLight position={[-12, 14, 100]} intensity={0.2}/>
-        </group>
-
-        {/* 模型 */}
-        <TriMesh
-          modelLoaded={modelLoaded}
-          verticesPosRef={verticesPosRef}
-          verticesTypeRef={verticesTypeRef}
-          cameraRef={cameraRef}
-          geometryRef={geometryRef}
-          meshRef={meshRef}
-        />
-
-      </Canvas>
-
-      {/* 相机和光源参数控件 */}
+      <span className="abs-text" style={{left: "5rem", bottom: "16.4rem"}}> Drag to rotate:</span>
       <CamPosCtl/>
       <LightPosCtl/>
-
-      {/* 顶点交互框选器 */}
-      <DraggableSelectorOn onClick={()=>{setSelectorType("drag")}}/>
-      <FixedSelectorOn onClick={()=>{setSelectorType("fixed")}}/>
-      <DeSelectorOn onClick={()=>{setSelectorType("calc")}}/>
-      {selectorType !== "none" &&
-        <RectSelector
-          selectorType={selectorType}
-          onDragDone={({xMin, xMax, yMin, yMax}) => {
-            // 关闭顶点选择器
-            setSelectorType("none");
-
-            // 找出所有落入该矩形的顶点编号
-            const verticesWithinRect = getVerticesWithinRect({verticesPosRef, meshRef, cameraRef, xMin, xMax, yMin, yMax});
-
-            // 将这些顶点设置为 Fixed 或 Draggable 或 Calc
-            const types = verticesTypeRef.current as VertexType[];
-            for (const idx of verticesWithinRect) {
-              if (selectorType === "drag") {
-                types[idx] = VertexType.Draggable;
-              } else if (selectorType === "fixed") {
-                types[idx] = VertexType.Fixed;
-              } else if (selectorType === "calc") {
-                types[idx] = VertexType.Calculated;
-              }
-            }
-
-            // 记 fixed 和 draggable 均为 handle, 若没有 handle, 则不能更新顶点坐标, 因为没有绝对位置的约束了!
-            const nrHandle = types.filter(type => type !== VertexType.Calculated).length;
-            if (nrHandle > 0) {
-              // if (!canVtxPosUpdate) {
-                setCanVtxPosUpdate(true);
-              // }
-            } else {
-              // if (canVtxPosUpdate) {
-                setCanVtxPosUpdate(false);
-              // }
-            }
-
-          }}
-        />
-      }
     </>
-  )
-}
 
+    {/* 顶点交互框选器 */}
+    <div className="selector-container">
+      <span style={{fontFamily: "sans-serif"}}>Vertex Selectors:</span>
+      <FixedSelectorOn onClick={()=>{setSelectorType("fixed")}}/>
+      <DraggableSelectorOn onClick={()=>{setSelectorType("drag")}}/>
+      <DeSelectorOn onClick={()=>{setSelectorType("calc")}}/>
+    </div>
+    {selectorType !== "none" &&
+      <RectSelector
+        selectorType={selectorType}
+        onDragDone={({xMin, xMax, yMin, yMax}) => {
+          // 关闭矩形选择器
+          setSelectorType("none");
+          // 找出所有落入该矩形的顶点编号, // 将这些顶点设置为 Fixed 或 Draggable 或 Calc
+          const verticesWithinRect = getVerticesWithinRect({verticesPosRef, meshRef, cameraRef, xMin, xMax, yMin, yMax});
+          const types = verticesTypeRef.current as VertexType[];
+          for (const idx of verticesWithinRect) {
+            if (selectorType === "drag") {types[idx] = VertexType.Draggable;}
+            else if (selectorType === "fixed") {types[idx] = VertexType.Fixed;}
+            else if (selectorType === "calc") {types[idx] = VertexType.Calculated;}
+          }
+          // 记 fixed 和 draggable 均为 handle, 若没有 handle, 则不能更新顶点坐标, 因为没有绝对位置的约束了!
+          const nrHandle = types.filter(type => type !== VertexType.Calculated).length;
+          if (nrHandle > 0 && !canVtxPosUpdate) {setCanVtxPosUpdate(true);}
+          if (nrHandle === 0 && canVtxPosUpdate) {setCanVtxPosUpdate(false);}
+        }}
+      />
+    }
+
+  </>)
+}
 
 export default App;
