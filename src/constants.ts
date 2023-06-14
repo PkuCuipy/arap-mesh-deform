@@ -5,7 +5,7 @@ export const CamCfgAtom = atom({
   default: {
     phi: Math.PI / 2,
     theta: 0,
-    distance: 1,
+    distance: 2,
   }
 })
 
@@ -24,6 +24,17 @@ export const enum VertexType {
   Fixed = 1,
   Draggable = 2,
 }
+export const vertexTypeToColor = (type: VertexType): number => {
+  switch (type) {
+    case VertexType.Fixed:
+      return 0xffaa55;
+    case VertexType.Draggable:
+      return 0xff0000;
+    case VertexType.Calculated:
+      return 0x049ef4;
+  }
+}
+
 
 export const ForceUpdateAtom = atom({
   key: 'ForceUpdateAtom',
