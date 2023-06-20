@@ -292,12 +292,26 @@ const calcRotationMatrices = (verticesOriginalPos, verticesPos, neighborTable, w
     }
 
     // 最优旋转: V * U^T
+    // 注: 现在 SVD 结果会有 NaN, 就很迷 —— SVD 不应该出 NaN 的吧 —— 至少 numpy 对于同样的矩阵不会.
+    //     为了避免 SVD 结果出现 NaN, 我发现可以将 Si 对角线元素加上一个很小的值.
+    //     但我觉得本质原因是 svd library 的问题, 但 JS 这边确实没什么可选的库了..
+    //     svd-js 我也试了, 竟然和 numeric 的结果一模一样, 当然, 也是有 NaN.
     const SiMat = [Si.slice(0, 3), Si.slice(3, 6), Si.slice(6, 9)];
-    const USVT = numeric.svd(SiMat);
-    if (numeric.det(USVT.U) * numeric.det(USVT.V) < 0) {  // 如果 Ri 不是旋转矩阵 (行列式不为 +1), 则将第三列反向, 以尽量小的代价将其变为旋转矩阵
-      USVT.U[0][2] *= -1; USVT.U[1][2] *= -1; USVT.U[2][2] *= -1;
+    const SiMax = Math.max(...Si);
+    for (let i = 0; i < 3; i++) { SiMat[i][i] += SiMax * 1e-6; }    // 为了避免 SVD 结果出现 NaN, 将 Si 对角线元素加上一个很小的值
+    const USV = numeric.svd(SiMat);
+    const [U, V] = [USV.U, USV.V];
+    const detU = numeric.det(U);
+    const detV = numeric.det(V);
+    if (detU * detV < 0) {    // 如果 Ri 不是旋转矩阵 (行列式不为 +1), 则将第三列反向, 以尽量小的代价将其变为旋转矩阵
+      U[0][2] *= -1; U[1][2] *= -1; U[2][2] *= -1;
     }
-    const Ri = numeric.dot(USVT.V, numeric.transpose(USVT.U));  // Ri := V * U^T
+    const UT = numeric.transpose(U);
+    let Ri = numeric.dot(V, UT);    // Ri := V * U^T
+    if (Number.isNaN(numeric.det(Ri))) {    // 如果 Ri 还是 NaN, 那就只能用单位矩阵凑合下了, 我也不知道咋办
+      console.error('Ri is NaN');
+      Ri = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    }
     R.push(Ri);
   }
 
@@ -386,6 +400,7 @@ export const App = () => {
   const modelOptions = [
     {label: "cactus", value: "cactus.obj"},
     {label: "person", value: "person.obj"},
+    {label: "carpet", value: "carpet.obj"},
   ]
   const loadModel = (modelName: "string") => {
     console.log("loading model: ", modelName)
@@ -437,6 +452,8 @@ export const App = () => {
       });
     });
   }
+
+  // App 第一次挂载时, 加载第一个模型.
   useEffect(() => {
     loadModel(modelOptions[0].value);
   }, []);
