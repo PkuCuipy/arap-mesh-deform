@@ -463,8 +463,6 @@ export const App = () => {
       const neighborVtxIds = Array.from(neighborTableRef.current.get(oriI));
       let [bix, biy, biz] = [0, 0, 0]
       for (const oriJ of neighborVtxIds) {
-        const newJ = oriToNew[oriJ];
-        if (newJ !== -1) {
           const Rj = R[oriJ];
           const RiPlusRj = Matrix3x3Add(Ri, Rj);
 
@@ -481,7 +479,6 @@ export const App = () => {
           bix += bi.x;
           biy += bi.y;
           biz += bi.z;
-        }
       }
       b.set(bix, newI, 0);
       b.set(biy, newI, 1);
