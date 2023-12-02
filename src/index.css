@@ -1,6 +1,7 @@
 * {
     margin: 0;
     padding: 0;
+    touch-action: none;
 }
 
 html,
@@ -129,4 +130,35 @@ body,
     height: 2rem;
     user-select: none;
     -webkit-user-select: none;
+}
+
+
+@media screen and (max-width: 768px) {
+    html {
+        font-size: 12px;
+    }
+    .cam-pos-ctl {
+        bottom: 10rem;
+        left: 5rem;
+    }
+    .light-pos-ctl {
+        bottom: 10rem;
+        left: 1rem;
+    }
+    .selector-container {
+        bottom: 1rem;
+        left: 1rem;
+    }
+    .model-selector {
+        bottom: 16.4rem;
+        left: 1rem;
+    }
+    #text-hint-1 {
+        left: 1rem !important;
+        bottom: 18.75rem !important;
+    }
+    #text-hint-2 {
+        left: 1rem !important;
+        bottom: 13.5rem !important;
+    }
 }

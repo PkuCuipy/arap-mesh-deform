@@ -14,7 +14,7 @@
 * 然后加个 .clone() 如果需要. 比如 Three 的向量加减法就默认 inplace, 稍不留神就导致奇怪的 bug.
 *
 * 另外, 援引的这两个数值库都很老, 也没有 npm 的版本, 于是没法 vite build 进来,
-* 只能 build 之后手动复制到 dist 文件夹中. 当然, 可能有什么更好的方案, 但我并不知道.
+* 只能 build 之后再额外地复制到 dist 文件夹中 (见配置文件中的 "yarn build" 部分). 当然, 可能有什么更好的方案, 但我并不知道.
 * 总之呢, 如果有下一次尝试, 可能会改用 Cpp + Eigen + imGUI + OpenGL 了, 虽然也没用过就是了.
 *
 */
@@ -340,11 +340,17 @@ export const TriMesh = ({modelLoaded, verticesPosRef, verticesTypeRef, cameraRef
     <>
       {/* 模型主体 mesh */}
       {modelLoaded && (
-        <mesh
-          ref={meshRef}
-          geometry={geometryRef.current}
-          material={new MeshPhongMaterial({color: 0x049ef4})}
-        />
+        <>
+          <mesh
+            ref={meshRef}
+            geometry={geometryRef.current}
+            material={new MeshPhongMaterial({color: 0x049ef4})}
+          />
+          {/*<mesh*/}
+          {/*  geometry={geometryRef.current}*/}
+          {/*  material={new MeshPhongMaterial({color: 0x14aeff, wireframe: true})}*/}
+          {/*/>*/}
+        </>
       )}
 
       {/* 染色的顶点 */}
@@ -645,7 +651,7 @@ export const App = () => {
     </Canvas>
 
     {/* 模型选择器 */}
-    <span className="abs-text" style={{left: "5rem", bottom: "21.8rem"}}> Select a model:</span>
+    <span id="text-hint-1" className="abs-text" style={{left: "5rem", bottom: "21.8rem"}}> Select a model:</span>
     <div className="model-selector">
       <Select
         options={modelOptions}
@@ -657,7 +663,7 @@ export const App = () => {
 
     {/* 相机和光源控件 */}
     <>
-      <span className="abs-text" style={{left: "5rem", bottom: "16.4rem"}}> Drag to rotate:</span>
+      <span id="text-hint-2" className="abs-text" style={{left: "5rem", bottom: "16.4rem"}}> Drag to rotate:</span>
       <CamPosCtl/>
       <LightPosCtl/>
     </>
